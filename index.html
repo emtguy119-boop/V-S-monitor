@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZOLL X Series 生理監視儀器模擬器</title>
+    <!-- 引入 Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto+Mono:wght@300;400;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <!-- MQTT over WebSockets library for remote control -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 側邊欄（講師控制後台） -->
+        <aside class="instructor-sidebar" id="instructorSidebar">
+            <div class="sidebar-header">
+                <h2>講師控制面板 (後台)</h2>
+                <button class="close-sidebar-btn" id="closeSidebarBtn" title="隱藏側邊欄">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"/></svg>
+                </button>
+            </div>
+            
+            <div class="sidebar-content">
+                <!-- 手機遠端遙控 -->
+                <div class="control-group card remote-sidebar-card">
+                    <h3>📱 手機遠端遙控</h3>
+                    <div class="remote-sidebar-info" style="display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem;">
+                        <div>連線狀態: <span id="sidebarRemoteStatus" class="status-badge status-disconnected" style="background-color: #d50000; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem; font-weight: bold;">中斷</span></div>
+                        <div>連線房號: <strong id="sidebarRoomCode" style="color: var(--zoll-yellow); font-family: var(--font-digital); font-size: 1.1rem; letter-spacing: 1px;">----</strong></div>
+                    </div>
+                    <button class="preset-btn" id="btnOpenRemoteSetup" style="width: 100%; margin-top: 10px; font-weight: bold; background-color: var(--zoll-yellow); color: #000; border-color: var(--zoll-yellow);">
+                        設定手機遙控 (顯示 QR)
+                    </button>
+                </div>
+
+                <!-- 生命徵象即時調整 -->
+                <div class="control-group card">
+                    <h3>生命徵象即時調整</h3>
+                    
+                    <div class="input-row">
+                        <label for="inputRhythm">ECG 心律</label>
+                        <select id="inputRhythm">
+                            <option value="NSR">NSR (正常竇性心律)</option>
+                            <option value="SB">Sinus Bradycardia (竇性緩脈)</option>
+                            <option value="ST">Sinus Tachycardia (竇性頻脈)</option>
+                            <option value="STEMI">STEMI (ST段上升心肌梗塞)</option>
+                            <option value="AF">Atrial Fibrillation (心房顫動)</option>
+                            <option value="VT">Ventricular Tachycardia (心室頻脈)</option>
+                            <option value="VF">Ventricular Fibrillation (心室顫動)</option>
+                            <option value="ASYST">Asystole (心搏停止)</option>
+                            <option value="PEA">PEA (無脈搏電活動)</option>
+                        </select>
+                    </div>
+
+                    <div class="input-row">
+                        <div class="slider-header">
+                            <label for="inputHR">心率 (HR/PR): <span id="valHR">75</span> bpm</label>
+                        </div>
+                        <input type="range" id="inputHR" min="0" max="220" value="75">
+                    </div>
+
+                    <div class="input-row">
+                        <div class="slider-header">
+                            <label for="inputSpO2">血氧 (SpO2): <span id="valSpO2">98</span> %</label>
+                        </div>
+                        <input type="range" id="inputSpO2" min="0" max="100" value="98">
+                    </div>
+
+                    <div class="input-row">
+                        <div class="slider-header">
+                            <label for="inputCO2">etCO2: <span id="valCO2">38</span> mmHg</label>
+                        </div>
+                        <input type="range" id="inputCO2" min="0" max="75" value="38">
+                    </div>
+
+                    <div class="input-row">
+                        <div class="slider-header">
+                            <label for="inputRR">呼吸次數 (RR): <span id="valRR">14</span> 次/分</label>
+                        </div>
+                        <input type="range" id="inputRR" min="0" max="60" value="14">
+                    </div>
+
+                    <div class="bp-inputs">
+                        <label>血壓 BP (Sys / Dia)</label>
+                        <div class="bp-fields">
+                            <input type="number" id="inputBPSys" min="30" max="260" value="120" placeholder="收縮">
+                            <span>/</span>
+                            <input type="number" id="inputBPDia" min="20" max="180" value="80" placeholder="舒張">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 治療性控制 (去顫/起搏) -->
+                <div class="control-group card">
+                    <h3>去顫設定 (Defibrillator)</h3>
+                    <div class="input-row">
+                        <label for="inputDefibEnergy">後台選取電擊能量</label>
+                        <select id="inputDefibEnergy">
+                            <option value="1">1 J</option>
+                            <option value="2">2 J</option>
+                            <option value="3">3 J</option>
+                            <option value="5">5 J</option>
+                            <option value="7">7 J</option>
+                            <option value="10">10 J</option>
+                            <option value="15">15 J</option>
+                            <option value="20">20 J</option>
+                            <option value="30">30 J</option>
+                            <option value="50">50 J</option>
+                            <option value="75">75 J</option>
+                            <option value="100">100 J</option>
+                            <option value="120">120 J</option>
+                            <option value="150" selected>150 J</option>
+                            <option value="200">200 J</option>
+                        </select>
+                    </div>
+                    
+                    <div class="input-row flex-row" style="gap: 8px;">
+                        <button class="preset-btn" id="sidebarBtnCharge" style="flex: 1; background-color: var(--zoll-yellow); color: #000; font-weight: bold; border-color: var(--zoll-yellow);">後台充電</button>
+                        <button class="preset-btn" id="sidebarBtnShock" style="flex: 1; background-color: var(--color-danger); color: #fff; font-weight: bold; border-color: var(--color-danger);" disabled>後台放電</button>
+                    </div>
+                </div>
+
+                <!-- 起搏設定 (Pacer Settings) -->
+                <div class="control-group card">
+                    <h3>起搏設定 (Pacer Settings)</h3>
+                    <div class="input-row">
+                        <div class="slider-header">
+                            <label for="inputPacerRate">起搏速率 (Rate): <span id="valPacerRate">70</span> ppm</label>
+                        </div>
+                        <input type="range" id="inputPacerRate" min="30" max="180" value="70" step="5">
+                    </div>
+                    <div class="input-row">
+                        <div class="slider-header">
+                            <label for="inputPacerOutput">起搏電流 (Output): <span id="valPacerOutput">0</span> mA</label>
+                        </div>
+                        <input type="range" id="inputPacerOutput" min="0" max="140" value="0" step="5">
+                    </div>
+                </div>
+
+                <!-- 預設臨床案例 -->
+                <div class="control-group card">
+                    <h3>快速載入臨床案例</h3>
+                    <div class="preset-buttons">
+                        <button class="preset-btn" data-preset="normal">健康成人</button>
+                        <button class="preset-btn" data-preset="copd">COPD 急性惡化</button>
+                        <button class="preset-btn" data-preset="shock">過敏性休克</button>
+                        <button class="preset-btn" data-preset="arrest-vt">心跳驟停 (VT)</button>
+                        <button class="preset-btn" data-preset="arrest-vf">心跳驟停 (VF)</button>
+                        <button class="preset-btn" data-preset="asystole">心搏停止 (Asystole)</button>
+                    </div>
+                </div>
+
+                <!-- 時間軸情境設定 -->
+                <div class="control-group card">
+                    <h3>自動化時間軸情境 (Timeline)</h3>
+                    <div class="timeline-controls">
+                        <button id="btnPlayTimeline" class="btn-primary">啟動情境</button>
+                        <button id="btnPauseTimeline" class="btn-secondary" disabled>暫停</button>
+                        <button id="btnResetTimeline" class="btn-danger">重設</button>
+                    </div>
+                    <div class="timeline-status">
+                        目前時間: <span id="timelineTimer" class="timer-display">00:00</span>
+                        <div class="status-indicator" id="timelineStatusIndicator">停止中</div>
+                    </div>
+                    
+                    <div class="timeline-table-container">
+                        <table class="timeline-table" id="timelineTable">
+                            <thead>
+                                <tr>
+                                    <th>時間(秒)</th>
+                                    <th>心律</th>
+                                    <th>HR</th>
+                                    <th>SpO2</th>
+                                    <th>BP</th>
+                                    <th>etCO2</th>
+                                    <th>RR</th>
+                                    <th>刪除</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- 動態生成 -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="add-step-form">
+                        <h4>新增時間點設定</h4>
+                        <div class="form-grid">
+                            <input type="number" id="addStepTime" placeholder="時間(秒)" min="1" value="30">
+                            <select id="addStepRhythm">
+                                <option value="NSR">NSR</option>
+                                <option value="SB">SB</option>
+                                <option value="ST">ST</option>
+                                <option value="STEMI">STEMI</option>
+                                <option value="AF">AF</option>
+                                <option value="VT">VT</option>
+                                <option value="VF">VF</option>
+                                <option value="ASYST">ASYST</option>
+                                <option value="PEA">PEA</option>
+                            </select>
+                            <input type="number" id="addStepHR" placeholder="HR" min="0" max="220" value="80">
+                            <input type="number" id="addStepSpO2" placeholder="SpO2" min="0" max="100" value="95">
+                            <input type="number" id="addStepBPSys" placeholder="收縮" min="30" max="260" value="110">
+                            <input type="number" id="addStepBPDia" placeholder="舒張" min="20" max="180" value="70">
+                            <input type="number" id="addStepCO2" placeholder="CO2" min="0" max="75" value="35">
+                            <input type="number" id="addStepRR" placeholder="RR" min="0" max="60" value="16">
+                        </div>
+                        <button id="btnAddTimelineStep" class="btn-add">添加時間點</button>
+                    </div>
+                </div>
+
+                <!-- 系統設定與音量 -->
+                <div class="control-group card">
+                    <h3>系統設定</h3>
+                    <div class="input-row flex-row">
+                        <label for="toggleSound">啟用模擬聲音</label>
+                        <input type="checkbox" id="toggleSound" checked>
+                    </div>
+                    <div class="input-row flex-row">
+                        <label for="toggleShockConvert">去顫電擊後自動轉 NSR</label>
+                        <input type="checkbox" id="toggleShockConvert" checked>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主顯示區域 -->
+        <main class="simulator-area">
+            <!-- 當側邊欄隱藏時的展開按鈕 -->
+            <button class="open-sidebar-btn hidden" id="openSidebarBtn" title="顯示側邊欄">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"/></svg>
+                <span>後台控制</span>
+            </button>
+
+            <!-- ZOLL X Series 實體機殼外觀模擬 -->
+            <div class="zoll-chassis">
+                <!-- 頂部提把與警報燈 -->
+                <div class="chassis-top">
+                    <div class="handle"></div>
+                    <div class="alarm-led-bar" id="alarmLedBar">
+                        <div class="led led-red"></div>
+                        <div class="led led-yellow"></div>
+                        <div class="led led-green"></div>
+                    </div>
+                </div>
+
+                <div class="chassis-body">
+                    <!-- 左側實體軟鍵 (8個灰矩形按鈕) -->
+                    <div class="chassis-left-softkeys">
+                        <button class="softkey-btn" id="skey1" title="選單鍵 1"></button>
+                        <button class="softkey-btn" id="skey2" title="選單鍵 2"></button>
+                        <button class="softkey-btn" id="skey3" title="選單鍵 3"></button>
+                        <button class="softkey-btn" id="skey4" title="選單鍵 4"></button>
+                        <button class="softkey-btn" id="skey5" title="選單鍵 5"></button>
+                        <button class="softkey-btn" id="skey6" title="選單鍵 6"></button>
+                        <button class="softkey-btn" id="skey7" title="選單鍵 7"></button>
+                        <button class="softkey-btn" id="skey8" title="選單鍵 8"></button>
+                    </div>
+
+                    <!-- 中間：監視器螢幕 -->
+                    <div class="screen-container">
+                        <div class="screen-bezel">
+                            <!-- 頂部品牌與電源鈕區 -->
+                            <div class="bezel-top-bar">
+                                <span class="bezel-brand">iSimulate Training Unit</span>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <button class="screen-line-btn" id="btnRemoteControl" title="手機遠端遙控連線" style="display: flex; align-items: center; justify-content: center; background: #263238; border: 1px solid #37474f; border-radius: 4px; padding: 4px; cursor: pointer; color: var(--zoll-yellow); height: 32px; width: 32px;">
+                                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                                            <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
+                                        </svg>
+                                    </button>
+                                    <button class="screen-line-btn" id="btnLINE" title="傳送 LINE 群組回報">
+                                        <img src="LINE_logo.svg.webp" alt="LINE">
+                                    </button>
+                                    <button class="bezel-power-btn" id="btnPower" title="電源開關">
+                                        <div class="power-icon">⏻</div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="monitor-screen off" id="monitorScreen">
+                                <!-- 頂部狀態列 -->
+                                <header class="monitor-header">
+                                    <div class="header-left">
+                                        <span class="header-date-time" id="screenClock">09/04/2020 14:44:51</span>
+                                    </div>
+                                    <div class="header-center">
+                                        <span class="patient-mode">
+                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display:inline-block; vertical-align:middle; margin-right:2px;">
+                                                <path d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z"/>
+                                            </svg>
+                                            Adult
+                                        </span>
+                                    </div>
+                                    <div class="header-right">
+                                        <span class="battery-status" id="batteryStatus">100%</span>
+                                        <span class="time-elapsed" id="screenElapsed">00:00:00</span>
+                                    </div>
+                                </header>
+
+                                <!-- 起搏與去顫治療狀態列 (Therapy Display Bar) -->
+                                <div class="therapy-display-bar" id="therapyDisplayBar">
+                                    <div class="therapy-block pacer-block" id="screenPacerStatus">
+                                        <span class="tag">PACER</span>
+                                        <span id="pacerRateWrapper" class="pacer-setting-item">RATE: <strong id="screenPacerRate">70</strong> ppm</span>
+                                        <span id="pacerOutputWrapper" class="pacer-setting-item">OUTPUT: <strong id="screenPacerOutput">0</strong> mA</span>
+                                    </div>
+                                    <div class="therapy-block defib-block" id="screenDefibStatus">
+                                        <span class="tag">DEFIB</span>
+                                        <span class="defib-energy-lbl">ENERGY: <strong id="screenDefibEnergy">150</strong> J</span>
+                                        <span class="defib-status-lbl" id="screenDefibMsg">SELECTED</span>
+                                    </div>
+                                </div>
+                                
+                                <!-- 主顯示區：包含左側選單、中間波形、右側數值 -->
+                                <div class="monitor-body">
+                                    <!-- 內建螢幕選單 (對應左側軟鍵) -->
+                                    <div class="monitor-left-menu">
+                                        <div class="menu-item-label" id="lblMenu1">-</div>
+                                        <div class="menu-item-label" id="lblLeadSelect">
+                                            <span class="menu-icon">I, II, III...</span>
+                                        </div>
+                                        <div class="menu-item-label" id="lblTwelveLead">
+                                            <span class="menu-icon green-trace-icon">12</span>
+                                        </div>
+                                        <div class="menu-item-label" id="lblCO2">
+                                            <span class="menu-icon green-dot-icon">CO₂</span>
+                                        </div>
+                                        <div class="menu-item-label" id="lblRx">
+                                            <span class="menu-icon">Rx</span>
+                                        </div>
+                                        <div class="menu-item-label" id="lblSync">SYNC</div>
+                                        <div class="menu-item-label" id="lblPrint">
+                                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M18,3H6V7H18M19,12A1,1 0 0,1 18,11A1,1 0 0,1 17,10A1,1 0 0,1 18,9A1,1 0 0,1 19,10M16,19H8V14H16M19,8H5A3,3 0 0,0 2,11V17H6V21H18V17H22V11A3,3 0 0,0 19,8Z"/></svg>
+                                        </div>
+                                        <div class="menu-item-label" id="lblLog">
+                                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6V12L16,14.25L15.25,15.5L10.5,12.75V6H12Z"/></svg>
+                                        </div>
+                                    </div>
+
+                                    <!-- 中央波形面板 (4個波形軌道) -->
+                                    <div class="waveforms-panel">
+                                        <!-- 波形 1: ECG -->
+                                        <div class="waveform-row">
+                                            <div class="wave-label wave-green">
+                                                <span class="lead-select">II</span>
+                                                <span class="lead-gain">1.0 cm/mV</span>
+                                            </div>
+                                            <div class="canvas-wrapper">
+                                                <canvas id="canvasECG"></canvas>
+                                            </div>
+                                        </div>
+                                        <!-- 波形 2: ART -->
+                                        <div class="waveform-row">
+                                            <div class="wave-label wave-red">
+                                                <span class="param-name">ART</span>
+                                                <span class="pleth-label">0 to 180 mmHg</span>
+                                            </div>
+                                            <div class="canvas-wrapper">
+                                                <canvas id="canvasART"></canvas>
+                                            </div>
+                                        </div>
+                                        <!-- 波形 3: CO2 -->
+                                        <div class="waveform-row">
+                                            <div class="wave-label wave-pink">
+                                                <span class="param-name">CO2</span>
+                                                <span class="capno-label">0 to 60 mmHg</span>
+                                            </div>
+                                            <div class="canvas-wrapper">
+                                                <canvas id="canvasCO2"></canvas>
+                                            </div>
+                                        </div>
+                                        <!-- 波形 4: SpO2 -->
+                                        <div class="waveform-row">
+                                            <div class="wave-label wave-yellow">
+                                                <span class="param-name">SpO2</span>
+                                                <span class="pleth-label">1 X</span>
+                                            </div>
+                                            <div class="canvas-wrapper">
+                                                <canvas id="canvasSpO2"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 右側數值面板 -->
+                                    <div class="numerics-panel">
+                                        <!-- HR -->
+                                        <div class="numeric-box box-green" id="boxHR">
+                                            <div class="box-header">HR <span class="unit">bpm</span></div>
+                                            <div class="box-value big-num" id="screenHR">78</div>
+                                        </div>
+                                        
+                                        <!-- NIBP -->
+                                        <div class="numeric-box box-cyan" id="boxNIBP">
+                                            <div class="box-header">
+                                                NIBP <span class="unit">mmHg</span>
+                                                <span class="box-footer-time" id="screenBPTime">--:--</span>
+                                            </div>
+                                            <div class="box-value" id="screenBP">---/---</div>
+                                            <div class="box-sub-value" id="screenBPMean">(---)</div>
+                                        </div>
+                                        
+                                        <!-- EtCO2 & BR -->
+                                        <div class="numeric-box box-pink" id="boxCO2">
+                                            <div class="box-header">EtCO2 <span class="unit">mmHg</span></div>
+                                            <div class="box-value big-num" id="screenCO2">36</div>
+                                            <div class="box-footer-row">
+                                                <span class="br-title">BR</span>
+                                                <span class="br-value" id="screenRR">11</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- SpO2 -->
+                                        <div class="numeric-box box-yellow" id="boxSpO2">
+                                            <div class="box-header">SpO2 <span class="unit">%</span></div>
+                                            <div class="box-value big-num" id="screenSpO2">97</div>
+                                            <div class="pleth-bar-container">
+                                                <div class="pleth-bar" id="plethBar"></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Temp -->
+                                        <div class="numeric-box box-white" id="boxTemp">
+                                            <div class="box-header">Temp <span class="unit">°C</span></div>
+                                            <div class="box-value" id="screenTemp">36.9</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 螢幕最底部狀態列 -->
+                                <div class="monitor-bottom-status">
+                                    <div class="bottom-status-block block-red" id="blockART">
+                                        <span class="lbl">ART mmHg</span>
+                                        <span class="val" id="bottomValART">---/--- (---)</span>
+                                    </div>
+                                    <div class="bottom-status-block block-cyan" id="blockP2">
+                                        <span class="lbl">P2 mmHg</span>
+                                        <span class="val">---</span>
+                                    </div>
+                                    <div class="bottom-status-block block-lightblue" id="blockP3">
+                                        <span class="lbl">P3 mmHg</span>
+                                        <span class="val">---</span>
+                                    </div>
+                                </div>
+
+                                <!-- 警報橫幅 -->
+                                <div class="alarm-banner" id="alarmBanner">SYSTEM OK</div>
+
+                                <!-- 12導程讀取中畫面 -->
+                                <div class="acquiring-screen" id="acquiringScreen">
+                                    <div class="acquiring-box">
+                                        <div class="acquiring-title">ACQUIRING 12-LEAD ECG</div>
+                                        <div class="acquiring-subtitle">請患者保持靜止，正在讀取訊號...</div>
+                                        <div class="progress-bar-container">
+                                            <div class="progress-bar-fill" id="acquiringProgressBar"></div>
+                                        </div>
+                                        <div class="acquiring-time">請等待 2 秒...</div>
+                                    </div>
+                                </div>
+
+                                <!-- 十二導程頁面 -->
+                                <div class="twelve-lead-screen" id="twelveLeadScreen">
+                                    <header class="twelve-lead-header">
+                                        <span>12-LEAD DIAGNOSTIC REPORT (十二導程心電圖)</span>
+                                        <span id="twelveLeadTime">12:00:00</span>
+                                    </header>
+                                    <div class="twelve-lead-grid">
+                                        <div class="lead-cell"><span class="cell-label">I</span><canvas id="canvasL1"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">aVR</span><canvas id="canvasLaVR"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">V1</span><canvas id="canvasLV1"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">V4</span><canvas id="canvasLV4"></canvas></div>
+                                        
+                                        <div class="lead-cell"><span class="cell-label">II</span><canvas id="canvasL2"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">aVL</span><canvas id="canvasLaVL"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">V2</span><canvas id="canvasLV2"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">V5</span><canvas id="canvasLV5"></canvas></div>
+                                        
+                                        <div class="lead-cell"><span class="cell-label">III</span><canvas id="canvasL3"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">aVF</span><canvas id="canvasLaVF"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">V3</span><canvas id="canvasLV3"></canvas></div>
+                                        <div class="lead-cell"><span class="cell-label">V6</span><canvas id="canvasLV6"></canvas></div>
+                                    </div>
+                                    <div class="twelve-lead-footer">
+                                        <div class="report-text" id="twelveLeadReportText">
+                                            NORMAL SINUS RHYTHM
+                                        </div>
+                                        <div class="report-actions">
+                                            <button class="twelve-lead-exit-btn" id="btnExitTwelveLead">返回監測畫面 (HOME)</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 歷史紀錄 Log 頁面 -->
+                                <div class="log-screen" id="logScreen">
+                                    <header class="log-header">
+                                        <span>EVENT LOG (學員操作歷史紀錄)</span>
+                                        <button class="log-clear-btn" id="btnClearLog">清除紀錄</button>
+                                    </header>
+                                    <div class="log-body">
+                                        <ul class="log-list" id="logList">
+                                            <!-- 動態插入紀錄 -->
+                                        </ul>
+                                    </div>
+                                    <div class="log-footer">
+                                        <button class="log-exit-btn" id="btnExitLog">返回監測畫面 (HOME)</button>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右側實體操作按鈕面板 -->
+                    <div class="chassis-right-bezel">
+                        <!-- 喇叭孔 / 偵測孔 -->
+                        <div class="speaker-grill"></div>
+
+                        <!-- 警報暫停與首頁鍵 -->
+                        <div class="right-row-split">
+                            <div class="btn-outer">
+                                <button class="physical-btn silence-btn" id="btnAlarmSuspend" title="暫停警報">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                        <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12C20,13.6 19.5,15.1 18.7,16.4L7.6,5.3C8.9,4.5 10.4,4 12,4M4,12A8,8 0 0,1 12,20C10.4,20 8.9,19.5 7.6,18.7L18.7,7.6C19.5,8.9 20,10.4 20,12A8,8 0 0,1 4,12Z"/>
+                                    </svg>
+                                </button>
+                                <span class="btn-lbl">Silence</span>
+                            </div>
+                            <div class="btn-outer">
+                                <button class="physical-btn home-btn" id="btnPhysicalHome" title="首頁/返回">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                        <path d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z"/>
+                                    </svg>
+                                </button>
+                                <span class="btn-lbl">Home</span>
+                            </div>
+                        </div>
+
+                        <!-- 飛梭與方向鍵群 (Up, Down, Left, Right + Select) -->
+                        <div class="direction-pad">
+                            <button class="nav-arrow-btn nav-up" id="btnNavUp">▲</button>
+                            <div class="nav-middle-row">
+                                <button class="nav-arrow-btn nav-left" id="btnNavLeft">◀</button>
+                                <button class="nav-select-btn" id="btnNavSelect">SELECT</button>
+                                <button class="nav-arrow-btn nav-right" id="btnNavRight">▶</button>
+                            </div>
+                            <button class="nav-arrow-btn nav-down" id="btnNavDown">▼</button>
+                        </div>
+
+                        <!-- 拍照與血壓量測 (Cuff) -->
+                        <div class="right-row-split-bottom">
+                            <div class="btn-outer">
+                                <button class="physical-btn camera-btn" id="btnPhysicalCamera" title="快照記錄">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                        <path d="M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z"/>
+                                    </svg>
+                                </button>
+                                <span class="btn-lbl">Print</span>
+                            </div>
+                            <div class="btn-outer">
+                                <button class="physical-btn cuff-btn" id="btnPhysicalNIBP" title="血壓量測">
+                                    <!-- 袖帶與箭頭圖案 -->
+                                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="6" width="14" height="12" rx="2" fill="currentColor" fill-opacity="0.2"/>
+                                        <path d="M20 9l2 3-2 3M17 12h4"/>
+                                        <circle cx="10" cy="12" r="2" fill="#fff"/>
+                                    </svg>
+                                </button>
+                                <span class="btn-lbl">NIBP</span>
+                            </div>
+                        </div>
+
+                        <!-- ETCO2 獨立按鈕 -->
+                        <div class="right-row-split-bottom" style="justify-content: flex-end; width: 100%; margin-top: -5px;">
+                            <div class="btn-outer" style="margin-right: 12px;">
+                                <button class="physical-btn etco2-toggle-btn" id="btnPhysicalCO2" title="etCO2 監測開關">
+                                    CO₂
+                                </button>
+                                <span class="btn-lbl">CO₂</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 底部實體治療控制區 (ANALYZE, ENERGY, CHARGE, SHOCK) -->
+                <div class="chassis-bottom-bezel">
+                    <!-- 起搏控制 -->
+                    <div class="bottom-btn-group">
+                        <button class="physical-btn bottom-pacer-btn" id="btnPacerToggle">
+                            PACER
+                        </button>
+                    </div>
+
+                    <!-- 診斷分析 -->
+                    <div class="bottom-btn-group">
+                        <button class="physical-btn bottom-analyze-btn" id="btnPhysicalAnalyze">
+                            ANALYZE
+                        </button>
+                    </div>
+
+                    <!-- 1. 去顫能量選擇 -->
+                    <div class="bottom-btn-group">
+                        <span class="step-num">1</span>
+                        <div class="energy-select-bezel-btn">
+                            <span class="select-title">ENERGY SELECT</span>
+                            <div class="energy-arrows-row">
+                                <button class="energy-adj-arrow-btn" id="btnEnergyDown">▼</button>
+                                <button class="energy-adj-arrow-btn" id="btnEnergyUp">▲</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. 充電 -->
+                    <div class="bottom-btn-group">
+                        <span class="step-num">2</span>
+                        <button class="physical-btn bottom-charge-btn" id="btnCharge">
+                            CHARGE
+                        </button>
+                    </div>
+
+                    <!-- 3. 電擊放電 (SHOCK 閃電圖案) -->
+                    <div class="bottom-btn-group">
+                        <span class="step-num">3</span>
+                        <button class="physical-btn bottom-shock-btn disabled" id="btnShock" disabled>
+                            <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+                                <path d="M11.5,2C11.5,2 11.5,2 11.5,2C11.42,2 11.35,2.05 11.32,2.13L6.13,12.7C6.08,12.79 6.09,12.9 6.16,12.97C6.23,13.04 6.33,13.06 6.42,13.02L11,11L9.27,21.57C9.25,21.67 9.3,21.78 9.39,21.82C9.48,21.87 9.59,21.84 9.65,21.76L17.85,11.3C17.92,11.22 17.92,11.1 17.86,11.02C17.79,10.94 17.69,10.91 17.6,10.95L13,13L11.73,2.17C11.72,2.07 11.62,2 11.5,2Z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- LINE 群組回報彈出視窗 -->
+    <div class="modal-overlay" id="lineModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>LINE 群組回報 - 十二導程心電圖</h3>
+                <button class="modal-close-btn" id="btnCloseModal" title="關閉視窗">&times;</button>
+            </div>
+            <div class="modal-body">
+                <img id="lineReportImg" src="無明顯.png" alt="ECG Report Image">
+            </div>
+            <div class="modal-footer">
+                <span class="modal-info">模擬已成功傳送至「救護教學交流群組」</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 遠端遙控設定彈出視窗 -->
+    <div class="modal-overlay" id="remoteModal">
+        <div class="modal-content" style="max-width: 550px;">
+            <div class="modal-header">
+                <h3>📱 手機遠端遙控設定</h3>
+                <button class="modal-close-btn" id="btnCloseRemoteModal" title="關閉視窗">&times;</button>
+            </div>
+            <div class="modal-body" style="background-color: #0d121f; padding: 20px; display: block; color: var(--text-main);">
+                <div class="remote-setup-row" style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px; flex-wrap: wrap;">
+                    <div class="qr-container" id="remoteQrContainer" style="width: 160px; height: 160px; background-color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 8px; flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+                        <div class="qr-placeholder" style="color: #666; font-size: 0.8rem; text-align: center;">載入 QR Code 中...</div>
+                    </div>
+                    <div class="remote-info-container" style="flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 8px;">
+                        <div>連線狀態: <span id="remoteConnStatus" style="background-color: #d50000; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem; font-weight: bold;">中斷</span></div>
+                        <div>連線房號: <strong id="remoteRoomCode" style="color: var(--zoll-yellow); font-family: var(--font-digital); font-size: 1.3rem; letter-spacing: 1px;">----</strong></div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">請用手機掃描 QR 碼，或點擊下方複製連結在手機上打開：</div>
+                        <input type="text" id="remoteUrlInput" style="width: 100%; padding: 6px 8px; font-size: 0.75rem; border-radius: 4px; border: 1px solid var(--border-color); background-color: #090a0f; color: var(--text-main); outline: none;" readonly>
+                        <button class="preset-btn" id="btnCopyRemoteUrl" style="align-self: flex-start; margin-top: 4px;">複製連結</button>
+                    </div>
+                </div>
+                <div class="remote-instructions" style="border-top: 1px solid var(--border-color); padding-top: 15px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.5;">
+                    <h4 style="color: var(--zoll-yellow); margin-bottom: 6px; font-size: 0.85rem;">使用說明：</h4>
+                    <ol style="padding-left: 16px; display: flex; flex-direction: column; gap: 4px;">
+                        <li>確保此電腦已連接網際網路。</li>
+                        <li>用手機掃描 QR 碼，或開啟上方複製的連結。</li>
+                        <li>手機成功開啟後即進入「教官遙控面板」，可即時調整生理數值與案例。</li>
+                        <li><strong>本地文件提示：</strong>若網址為 <code>file://</code> 開頭，手機將無法直連。請在本地開啟主機服務（例如 VS Code 的 Live Server）或將本專案部署至網路空間。</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 載入腳本 -->
+    <script src="html2canvas.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
